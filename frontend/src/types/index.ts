@@ -65,6 +65,18 @@ export interface Schedule {
   createdAt: string;
 }
 
+export interface CounselorReview {
+  id: string;
+  appointmentId: string;
+  rating: number;
+  content: string;
+  isAnonymous: boolean;
+  reply: string | null;
+  repliedAt: string | null;
+  createdAt: string;
+  authorName?: string;
+}
+
 export interface Appointment {
   id: string;
   clientId: string;
@@ -80,6 +92,7 @@ export interface Appointment {
   schedule: Schedule;
   client: User;
   counselor: User;
+  review?: CounselorReview | null;
 }
 
 export interface SupportGroup {

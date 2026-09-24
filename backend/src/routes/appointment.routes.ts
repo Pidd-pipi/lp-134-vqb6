@@ -12,6 +12,12 @@ const createAppointmentSchema = z.object({
   description: z.string().optional()
 });
 
+const createReviewSchema = z.object({
+  rating: z.number().int().min(1).max(5),
+  content: z.string().min(1).max(1000),
+  isAnonymous: z.boolean().optional().default(false)
+});
+
 router.post('/', authMiddleware, async (req: AuthRequest, res) => {
   try {
     const validated = createAppointmentSchema.parse(req.body);
@@ -104,6 +110,7 @@ router.get('/my', authMiddleware, async (req: AuthRequest, res) => {
       where,
       include: {
         schedule: true,
+        review: true,
         client: {
           select: {
             id: true,
@@ -139,6 +146,7 @@ router.get('/:id', authMiddleware, async (req: AuthRequest, res) => {
       where: { id },
       include: {
         schedule: true,
+        review: true,
         client: {
           select: {
             id: true,
@@ -292,6 +300,74 @@ router.post('/:id/complete', authMiddleware, async (req: AuthRequest, res) => {
     });
   } catch (error) {
     sendInternalError(res, error, '完成预约错误', '完成预约失败');
+  }
+});
+
+router.post('/:id/review', authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const validated = createReviewSchema.parse(req.body);
+    const userId = req.user!.id;
+
+    const appointment = await prisma.appointment.findUnique({
+      where: { id },
+      include: { review: true }
+    });
+
+    if (!appointment) {
+      return res.status(404).json({ error: '预约不存在' });
+    }
+
+    if (appointment.clientId !== userId) {
+      return res.status(403).json({ error: '只有本预约的来访者可以评价' });
+    }
+
+    if (appointment.status !== 'COMPLETED') {
+      return res.status(400).json({ error: '咨询完成后才能评价' });
+    }
+
+    if (appointment.review) {
+      return res.status(400).json({ error: '该预约已提交过评价，不能重复提交' });
+    }
+
+    let review;
+    try {
+      review = await prisma.counselorReview.create({
+        data: {
+          appointmentId: id,
+          clientId: userId,
+          counselorId: appointment.counselorId,
+          rating: validated.rating,
+          content: validated.content,
+          isAnonymous: validated.isAnonymous
+        }
+      });
+    } catch (error: any) {
+      if (error?.code === 'P2002') {
+        return res.status(400).json({ error: '该预约已提交过评价，不能重复提交' });
+      }
+      throw error;
+    }
+
+    await prisma.notification.create({
+      data: {
+        userId: appointment.counselorId,
+        type: 'NEW_REVIEW',
+        title: '收到新的咨询评价',
+        content: `您的咨询「${appointment.title}」收到了一条 ${validated.rating} 星评价`,
+        relatedId: review.id
+      }
+    });
+
+    res.json({
+      message: '评价提交成功',
+      review
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return sendValidationError(res, error);
+    }
+    sendInternalError(res, error, '提交咨询评价错误', '提交评价失败');
   }
 });
 

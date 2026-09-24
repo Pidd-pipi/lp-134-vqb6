@@ -26,6 +26,68 @@ const reviewCounselorSchema = z.object({
   rejectionReason: z.string().optional()
 });
 
+// 公开展示评价时隐藏匿名评价者的身份信息
+const serializeReview = (review: any) => ({
+  id: review.id,
+  appointmentId: review.appointmentId,
+  rating: review.rating,
+  content: review.content,
+  isAnonymous: review.isAnonymous,
+  reply: review.reply,
+  repliedAt: review.repliedAt,
+  createdAt: review.createdAt,
+  authorName: review.isAnonymous
+    ? '匿名用户'
+    : (review.client?.nickname || review.client?.username || '来访者')
+});
+
+const attachReviewStats = async (counselors: any[]) => {
+  const userIds = counselors.map(c => c.userId);
+  if (userIds.length === 0) {
+    return counselors;
+  }
+
+  const [aggregates, recentReviews] = await Promise.all([
+    prisma.counselorReview.groupBy({
+      by: ['counselorId'],
+      where: { counselorId: { in: userIds } },
+      _avg: { rating: true },
+      _count: { _all: true }
+    }),
+    prisma.counselorReview.findMany({
+      where: { counselorId: { in: userIds } },
+      include: {
+        client: {
+          select: {
+            username: true,
+            nickname: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    })
+  ]);
+
+  const aggregateMap = new Map(aggregates.map(a => [a.counselorId, a]));
+  const latestReviewMap = new Map<string, any>();
+  for (const review of recentReviews) {
+    if (!latestReviewMap.has(review.counselorId)) {
+      latestReviewMap.set(review.counselorId, review);
+    }
+  }
+
+  return counselors.map(counselor => {
+    const aggregate = aggregateMap.get(counselor.userId);
+    const latestReview = latestReviewMap.get(counselor.userId);
+    return {
+      ...counselor,
+      averageRating: aggregate?._avg.rating ? Math.round(aggregate._avg.rating * 10) / 10 : null,
+      reviewCount: aggregate?._count._all ?? 0,
+      latestReview: latestReview ? serializeReview(latestReview) : null
+    };
+  });
+};
+
 router.post('/apply', authMiddleware, requireRole(['USER']), async (req: AuthRequest, res) => {
   try {
     const validated = applyCounselorSchema.parse(req.body);
@@ -183,7 +245,7 @@ router.get('/approved', async (req, res) => {
       orderBy: { createdAt: 'desc' }
     });
 
-    res.json(counselors);
+    res.json(await attachReviewStats(counselors));
   } catch (error) {
     sendInternalError(res, error, '获取咨询师列表错误', '获取咨询师列表失败');
   }
@@ -225,9 +287,59 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: '咨询师不存在或未通过审核' });
     }
 
-    res.json(counselor);
+    const reviews = await prisma.counselorReview.findMany({
+      where: { counselorId: counselor.userId },
+      include: {
+        client: {
+          select: {
+            username: true,
+            nickname: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 10
+    });
+
+    const [withStats] = await attachReviewStats([counselor]);
+
+    res.json({
+      ...withStats,
+      reviews: reviews.map(serializeReview)
+    });
   } catch (error) {
     sendInternalError(res, error, '获取咨询师详情错误', '获取咨询师详情失败');
+  }
+});
+
+router.get('/:id/reviews', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const counselor = await prisma.counselorProfile.findUnique({
+      where: { id }
+    });
+
+    if (!counselor || counselor.status !== 'APPROVED') {
+      return res.status(404).json({ error: '咨询师不存在或未通过审核' });
+    }
+
+    const reviews = await prisma.counselorReview.findMany({
+      where: { counselorId: counselor.userId },
+      include: {
+        client: {
+          select: {
+            username: true,
+            nickname: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.json(reviews.map(serializeReview));
+  } catch (error) {
+    sendInternalError(res, error, '获取咨询师评价错误', '获取咨询师评价失败');
   }
 });
 

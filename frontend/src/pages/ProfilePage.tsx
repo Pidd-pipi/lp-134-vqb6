@@ -1,8 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, Link } from 'react-router-dom';
-import { userAPI } from '../services/api';
+import { userAPI, reviewAPI } from '../services/api';
 import { Appointment, Favorite, SupportGroup, Notification, Post } from '../types';
 import { useAuth } from '../context/AuthContext';
+
+const StarDisplay: React.FC<{ rating: number }> = ({ rating }) => (
+  <span className="text-yellow-500">
+    {'★'.repeat(rating)}<span className="text-gray-300">{'★'.repeat(5 - rating)}</span>
+  </span>
+);
 
 const ProfilePage: React.FC = () => {
   const { user, isLoading } = useAuth();
@@ -12,6 +18,10 @@ const ProfilePage: React.FC = () => {
   const [groups, setGroups] = useState<SupportGroup[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [myPosts, setMyPosts] = useState<Post[]>([]);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [reviewData, setReviewData] = useState({ rating: 5, content: '', isAnonymous: false });
+  const [replyingId, setReplyingId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState('');
 
   useEffect(() => {
     if (!user) return;
@@ -71,6 +81,36 @@ const ProfilePage: React.FC = () => {
       setAppointments(res.data);
     } catch (error) {
       alert('取消失败');
+    }
+  };
+
+  const handleSubmitReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reviewingId) return;
+    try {
+      await reviewAPI.create(reviewingId, reviewData);
+      alert('评价提交成功！');
+      setReviewingId(null);
+      setReviewData({ rating: 5, content: '', isAnonymous: false });
+      const res = await userAPI.getAppointments();
+      setAppointments(res.data);
+    } catch (error: any) {
+      alert(error.response?.data?.error || '评价提交失败');
+    }
+  };
+
+  const handleSubmitReply = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!replyingId) return;
+    try {
+      await reviewAPI.reply(replyingId, { reply: replyText });
+      alert('回复成功！');
+      setReplyingId(null);
+      setReplyText('');
+      const res = await userAPI.getAppointments();
+      setAppointments(res.data);
+    } catch (error: any) {
+      alert(error.response?.data?.error || '回复失败');
     }
   };
 
@@ -169,6 +209,52 @@ const ProfilePage: React.FC = () => {
                         取消预约
                       </button>
                     ) : null}
+
+                    {user.role !== 'COUNSELOR' && appointment.status === 'COMPLETED' && !appointment.review && (
+                      <button
+                        onClick={() => {
+                          setReviewingId(appointment.id);
+                          setReviewData({ rating: 5, content: '', isAnonymous: false });
+                        }}
+                        className="btn-primary text-sm mt-2"
+                      >
+                        评价本次咨询
+                      </button>
+                    )}
+
+                    {appointment.review && (
+                      <div className="mt-3 bg-gray-50 rounded-lg p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <StarDisplay rating={appointment.review.rating} />
+                          <span className="text-xs text-gray-500">
+                            {user.role === 'COUNSELOR'
+                              ? '来访者评价'
+                              : appointment.review.isAnonymous ? '匿名评价' : '我的评价'}
+                            {' · '}
+                            {new Date(appointment.review.createdAt).toLocaleDateString('zh-CN')}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-700">{appointment.review.content}</p>
+                        {appointment.review.reply ? (
+                          <div className="mt-2 pl-3 border-l-2 border-primary-200">
+                            <p className="text-xs text-primary-600 mb-1">咨询师回复</p>
+                            <p className="text-sm text-gray-700">{appointment.review.reply}</p>
+                          </div>
+                        ) : user.role === 'COUNSELOR' ? (
+                          <button
+                            onClick={() => {
+                              setReplyingId(appointment.review!.id);
+                              setReplyText('');
+                            }}
+                            className="text-primary-600 hover:underline text-sm mt-2"
+                          >
+                            回复评价
+                          </button>
+                        ) : (
+                          <p className="text-xs text-gray-400 mt-2">咨询师暂未回复</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))
               )}
@@ -290,6 +376,111 @@ const ProfilePage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {reviewingId && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md">
+            <h2 className="text-2xl font-bold mb-6">评价本次咨询</h2>
+            <form onSubmit={handleSubmitReview} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  评分 *
+                </label>
+                <div className="flex gap-1">
+                  {[1, 2, 3, 4, 5].map(star => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => setReviewData({ ...reviewData, rating: star })}
+                      className={`text-3xl transition-colors ${
+                        star <= reviewData.rating ? 'text-yellow-400' : 'text-gray-300'
+                      } hover:text-yellow-400`}
+                    >
+                      ★
+                    </button>
+                  ))}
+                  <span className="ml-2 text-sm text-gray-500 self-center">{reviewData.rating} 分</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  咨询感受 *
+                </label>
+                <textarea
+                  value={reviewData.content}
+                  onChange={e => setReviewData({ ...reviewData, content: e.target.value })}
+                  className="input-field min-h-[100px]"
+                  placeholder="写下这次咨询带给你的感受..."
+                  required
+                />
+              </div>
+
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={reviewData.isAnonymous}
+                  onChange={e => setReviewData({ ...reviewData, isAnonymous: e.target.checked })}
+                  className="rounded"
+                />
+                匿名展示（公开区域不显示我的昵称）
+              </label>
+
+              <p className="text-xs text-gray-400">评价提交后将固定保存，无法修改或重复提交。</p>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setReviewingId(null)}
+                  className="btn-secondary"
+                >
+                  取消
+                </button>
+                <button type="submit" className="btn-primary">
+                  提交评价
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {replyingId && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md">
+            <h2 className="text-2xl font-bold mb-6">回复评价</h2>
+            <form onSubmit={handleSubmitReply} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  回复内容 *
+                </label>
+                <textarea
+                  value={replyText}
+                  onChange={e => setReplyText(e.target.value)}
+                  className="input-field min-h-[100px]"
+                  placeholder="感谢来访者的反馈，写下你的回复..."
+                  required
+                />
+              </div>
+
+              <p className="text-xs text-gray-400">回复将公开展示在评价下方，且只能回复一次。</p>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setReplyingId(null)}
+                  className="btn-secondary"
+                >
+                  取消
+                </button>
+                <button type="submit" className="btn-primary">
+                  提交回复
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

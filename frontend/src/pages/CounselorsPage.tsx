@@ -129,6 +129,14 @@ const CounselorsPage: React.FC = () => {
                   {counselor.user.nickname || counselor.user.username}
                 </h3>
                 <p className="text-primary-600">认证咨询师</p>
+                {counselor.reviewCount > 0 ? (
+                  <p className="text-sm text-yellow-600">
+                    ★ {counselor.averageRating?.toFixed(1)}
+                    <span className="text-gray-400 ml-1">({counselor.reviewCount}条评价)</span>
+                  </p>
+                ) : (
+                  <p className="text-sm text-gray-400">暂无评价</p>
+                )}
               </div>
             </div>
 
@@ -143,6 +151,19 @@ const CounselorsPage: React.FC = () => {
             <p className="text-gray-600 text-sm mb-4 line-clamp-2">
               {counselor.introduction || '暂无简介'}
             </p>
+
+            {counselor.latestReview && (
+              <div className="bg-gray-50 rounded-lg p-3 mb-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-yellow-500 text-sm">
+                    {'★'.repeat(counselor.latestReview.rating)}
+                    <span className="text-gray-300">{'★'.repeat(5 - counselor.latestReview.rating)}</span>
+                  </span>
+                  <span className="text-xs text-gray-500">{counselor.latestReview.authorName}</span>
+                </div>
+                <p className="text-sm text-gray-600 line-clamp-2">{counselor.latestReview.content}</p>
+              </div>
+            )}
 
             <div className="flex items-center justify-between pt-4 border-t">
               <span className="text-lg font-bold text-primary-600">

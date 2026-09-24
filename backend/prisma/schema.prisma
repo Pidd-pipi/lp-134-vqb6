@@ -68,7 +68,9 @@ model User {
   favorites       Favorite[]
   sentMessages    GroupMessage[]
   crisisAlerts    CrisisAlert[]
-  
+  reviewsAsClient CounselorReview[] @relation("ClientReviews")
+  reviewsAsCounselor CounselorReview[] @relation("CounselorReviews")
+
   @@map("users")
 }
 
@@ -201,8 +203,29 @@ model Appointment {
   client          User            @relation("ClientAppointments", fields: [clientId], references: [id])
   counselor       User            @relation("CounselorAppointments", fields: [counselorId], references: [id])
   schedule        Schedule        @relation(fields: [scheduleId], references: [id])
-  
+  review          CounselorReview?
+
   @@map("appointments")
+}
+
+model CounselorReview {
+  id              String          @id @default(uuid())
+  appointmentId   String          @unique
+  clientId        String
+  counselorId     String
+  rating          Int
+  content         String
+  isAnonymous     Boolean         @default(false)
+  reply           String?
+  repliedAt       DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  appointment     Appointment     @relation(fields: [appointmentId], references: [id])
+  client          User            @relation("ClientReviews", fields: [clientId], references: [id])
+  counselor       User            @relation("CounselorReviews", fields: [counselorId], references: [id])
+
+  @@map("counselor_reviews")
 }
 
 model SupportGroup {
