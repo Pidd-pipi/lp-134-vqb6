@@ -80,6 +80,20 @@ export interface Appointment {
   schedule: Schedule;
   client: User;
   counselor: User;
+  review?: Review | null;
+}
+
+export interface Review {
+  id: string;
+  appointmentId?: string;
+  counselorId?: string;
+  rating: number;
+  content: string;
+  isAnonymous: boolean;
+  reply: string | null;
+  repliedAt: string | null;
+  createdAt: string;
+  displayName?: string;
 }
 
 export interface SupportGroup {

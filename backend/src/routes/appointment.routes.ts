@@ -104,6 +104,7 @@ router.get('/my', authMiddleware, async (req: AuthRequest, res) => {
       where,
       include: {
         schedule: true,
+        review: true,
         client: {
           select: {
             id: true,

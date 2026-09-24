@@ -76,6 +76,15 @@ export const appointmentAPI = {
   pay: (id: string) => api.post(`/appointments/${id}/pay`)
 };
 
+export const reviewAPI = {
+  create: (data: { appointmentId: string; rating: number; content: string; isAnonymous?: boolean }) =>
+    api.post('/reviews', data),
+  reply: (id: string, data: { reply: string }) =>
+    api.post(`/reviews/${id}/reply`, data),
+  getCounselorReviews: (counselorId: string) =>
+    api.get(`/counselors/${counselorId}/reviews`)
+};
+
 export const groupAPI = {
   getGroups: (params?: { page?: number; limit?: number }) =>
     api.get('/groups', { params }),

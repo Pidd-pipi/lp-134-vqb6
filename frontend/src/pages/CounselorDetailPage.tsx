@@ -104,6 +104,17 @@ const CounselorDetailPage: React.FC = () => {
               ))}
             </div>
             <p className="text-gray-600 mb-4">{counselor.introduction}</p>
+            <div className="flex items-center gap-3 justify-center md:justify-start mb-4">
+              {counselor.reviewCount > 0 ? (
+                <>
+                  <span className="text-yellow-500 text-xl">★</span>
+                  <span className="text-xl font-bold text-gray-800">{counselor.averageRating}</span>
+                  <span className="text-gray-500">（{counselor.reviewCount} 条评价）</span>
+                </>
+              ) : (
+                <span className="text-gray-400">暂无评价</span>
+              )}
+            </div>
             <div className="text-2xl font-bold text-primary-600">
               ¥{counselor.hourlyRate}/小时
             </div>
@@ -151,6 +162,43 @@ const CounselorDetailPage: React.FC = () => {
                     </button>
                   ))}
                 </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white rounded-lg shadow-md p-6 mb-8">
+        <h2 className="text-xl font-bold text-gray-800 mb-6">
+          来访者评价{counselor.reviewCount > 0 && `（${counselor.reviewCount}）`}
+        </h2>
+
+        {!counselor.reviews || counselor.reviews.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            暂无评价
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {counselor.reviews.map((review: any) => (
+              <div key={review.id} className="border rounded-lg p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-yellow-500">
+                      {'★'.repeat(review.rating)}{'☆'.repeat(5 - review.rating)}
+                    </span>
+                    <span className="text-sm font-medium text-gray-700">{review.displayName}</span>
+                  </div>
+                  <span className="text-xs text-gray-400">
+                    {new Date(review.createdAt).toLocaleDateString('zh-CN')}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-700">{review.content}</p>
+                {review.reply && (
+                  <div className="mt-3 bg-primary-50 rounded-lg p-3">
+                    <p className="text-xs font-medium text-primary-700 mb-1">咨询师回复</p>
+                    <p className="text-sm text-gray-700">{review.reply}</p>
+                  </div>
+                )}
               </div>
             ))}
           </div>

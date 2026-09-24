@@ -1,8 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, Link } from 'react-router-dom';
-import { userAPI } from '../services/api';
+import { userAPI, reviewAPI } from '../services/api';
 import { Appointment, Favorite, SupportGroup, Notification, Post } from '../types';
 import { useAuth } from '../context/AuthContext';
+
+const StarDisplay: React.FC<{ rating: number }> = ({ rating }) => (
+  <span className="text-yellow-500">
+    {'★'.repeat(rating)}{'☆'.repeat(5 - rating)}
+  </span>
+);
 
 const ProfilePage: React.FC = () => {
   const { user, isLoading } = useAuth();
@@ -12,6 +18,10 @@ const ProfilePage: React.FC = () => {
   const [groups, setGroups] = useState<SupportGroup[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [myPosts, setMyPosts] = useState<Post[]>([]);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [reviewForm, setReviewForm] = useState({ rating: 5, content: '', isAnonymous: false });
+  const [replyForms, setReplyForms] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -71,6 +81,58 @@ const ProfilePage: React.FC = () => {
       setAppointments(res.data);
     } catch (error) {
       alert('取消失败');
+    }
+  };
+
+  const refreshAppointments = async () => {
+    const res = await userAPI.getAppointments();
+    setAppointments(res.data);
+  };
+
+  const handleSubmitReview = async (appointmentId: string) => {
+    if (reviewForm.rating < 1 || reviewForm.rating > 5) {
+      alert('请选择1到5星评分');
+      return;
+    }
+    if (!reviewForm.content.trim()) {
+      alert('请写下你的咨询感受');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await reviewAPI.create({
+        appointmentId,
+        rating: reviewForm.rating,
+        content: reviewForm.content.trim(),
+        isAnonymous: reviewForm.isAnonymous
+      });
+      alert('评价提交成功，提交后将无法修改');
+      setReviewingId(null);
+      setReviewForm({ rating: 5, content: '', isAnonymous: false });
+      await refreshAppointments();
+    } catch (error: any) {
+      alert(error.response?.data?.error || '评价提交失败');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleReplyReview = async (reviewId: string) => {
+    const reply = (replyForms[reviewId] || '').trim();
+    if (!reply) {
+      alert('请输入回复内容');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await reviewAPI.reply(reviewId, { reply });
+      alert('回复成功');
+      setReplyForms(prev => ({ ...prev, [reviewId]: '' }));
+      await refreshAppointments();
+    } catch (error: any) {
+      alert(error.response?.data?.error || '回复失败');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -169,6 +231,115 @@ const ProfilePage: React.FC = () => {
                         取消预约
                       </button>
                     ) : null}
+
+                    {/* 来访者：已完成的预约可提交评价 */}
+                    {user.role !== 'COUNSELOR' && appointment.status === 'COMPLETED' && !appointment.review && (
+                      <div className="mt-3 pt-3 border-t">
+                        {reviewingId === appointment.id ? (
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-1">
+                              {[1, 2, 3, 4, 5].map(star => (
+                                <button
+                                  key={star}
+                                  type="button"
+                                  onClick={() => setReviewForm(prev => ({ ...prev, rating: star }))}
+                                  className={`text-2xl ${star <= reviewForm.rating ? 'text-yellow-500' : 'text-gray-300'}`}
+                                >
+                                  ★
+                                </button>
+                              ))}
+                              <span className="ml-2 text-sm text-gray-500">{reviewForm.rating} 分</span>
+                            </div>
+                            <textarea
+                              value={reviewForm.content}
+                              onChange={e => setReviewForm(prev => ({ ...prev, content: e.target.value }))}
+                              className="input-field min-h-[80px]"
+                              placeholder="写下这次咨询的感受..."
+                              maxLength={1000}
+                            />
+                            <label className="flex items-center gap-2 text-sm text-gray-600">
+                              <input
+                                type="checkbox"
+                                checked={reviewForm.isAnonymous}
+                                onChange={e => setReviewForm(prev => ({ ...prev, isAnonymous: e.target.checked }))}
+                              />
+                              匿名展示（公开页面不显示我的昵称）
+                            </label>
+                            <div className="flex gap-3">
+                              <button
+                                onClick={() => handleSubmitReview(appointment.id)}
+                                disabled={submitting}
+                                className="btn-primary text-sm"
+                              >
+                                {submitting ? '提交中...' : '提交评价'}
+                              </button>
+                              <button
+                                onClick={() => setReviewingId(null)}
+                                className="btn-secondary text-sm"
+                              >
+                                取消
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setReviewForm({ rating: 5, content: '', isAnonymous: false });
+                              setReviewingId(appointment.id);
+                            }}
+                            className="text-primary-600 hover:text-primary-700 text-sm font-medium"
+                          >
+                            ✏️ 评价本次咨询
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 已提交的评价（双方可见，提交后固定不可修改） */}
+                    {appointment.review && (
+                      <div className="mt-3 pt-3 border-t">
+                        <div className="flex items-center gap-2 mb-1">
+                          <StarDisplay rating={appointment.review.rating} />
+                          <span className="text-xs text-gray-500">
+                            {appointment.review.isAnonymous
+                              ? '匿名用户'
+                              : (user.role === 'COUNSELOR'
+                                  ? (appointment.client.nickname || appointment.client.username)
+                                  : '我')}
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            {new Date(appointment.review.createdAt).toLocaleDateString('zh-CN')}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-700">{appointment.review.content}</p>
+
+                        {appointment.review.reply ? (
+                          <div className="mt-2 bg-primary-50 rounded-lg p-3">
+                            <p className="text-xs font-medium text-primary-700 mb-1">咨询师回复</p>
+                            <p className="text-sm text-gray-700">{appointment.review.reply}</p>
+                          </div>
+                        ) : (
+                          user.role === 'COUNSELOR' && (
+                            <div className="mt-2 space-y-2">
+                              <textarea
+                                value={replyForms[appointment.review.id] || ''}
+                                onChange={e => setReplyForms(prev => ({ ...prev, [appointment.review!.id]: e.target.value }))}
+                                className="input-field min-h-[60px] text-sm"
+                                placeholder="回复这条评价（仅可回复一次，回复将公开显示）..."
+                                maxLength={1000}
+                              />
+                              <button
+                                onClick={() => handleReplyReview(appointment.review!.id)}
+                                disabled={submitting}
+                                className="btn-primary text-sm"
+                              >
+                                {submitting ? '提交中...' : '回复评价'}
+                              </button>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))
               )}
